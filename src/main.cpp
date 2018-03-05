@@ -1,6 +1,11 @@
 #include "WiFi.h"
 
+//////////////////////////////////  Tasks handles //////////////////////////
+
 TaskHandle_t primulHandle; // defining the rtos task handle
+TaskHandle_t alDoileaHandle; // defining the rtos task handle
+
+/////////////////////////////////  Global Variables ///////////////////////
 
 int ledc_channel_0 = 0;
 int ledc_times_13_bit = 13;
@@ -10,7 +15,11 @@ double ledc_base_freq = 5000;
 const char *ssid = "MyEsp32";      //Wifi network name
 const char *password = "Password"; // Wifi password
 
+/////////////////////////////////////  Wifi Server instance  /////////////////////
+
 WiFiServer server(80);
+
+////////////////////////////////////// Template function //////////////////////////////////////////////////////////
 
 template <class T>
 const T &min(const T &a, const T &b)
@@ -18,13 +27,22 @@ const T &min(const T &a, const T &b)
   return (a < b) ? a : b; //implementation of "min" function template
 }                         //told ya' that i hate defines :)
 
-void ledcAnalogWrite(int channel, int value, int valueMax = 255)
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void ledcAnalogWrite(int channel, int value, int valueMax = 255) // a normal function implemented. No prototype needed
 {
   // calculate duty, 8191 from 2 ^ 13 - 1
   int duty = (8191 / valueMax) * min(value, valueMax);
   // write duty to LEDC
   ledcWrite(channel, duty);
 }
+
+//////////////////////////////////////////// Prototypes /////////////////////////////////////////////////////////////////////
+
+void ledFade(); // a function prototype, function implemented later
+void blink(); // a function prototype, function implemented later
+
+/////////////////////////////////////////////  Tasks  //////////////////////////////////////////////////////////////////////
 
 void PrimulTask(void *parameter) // the rtos task
 {
@@ -86,32 +104,11 @@ void PrimulTask(void *parameter) // the rtos task
           }
           if (currentLine.endsWith("GET /BLINK"))
           {
-            for (int i = 0; i < 4; i++) // Blink the led 4 times
-            {
-              digitalWrite(LED_BUILTIN, HIGH);
-              delay(500);
-              digitalWrite(LED_BUILTIN, LOW);
-              delay(500);
-            }
+            blink();
           }
           if (currentLine.endsWith("GET /WAVE"))
           {
-            ledcSetup(ledc_channel_0, ledc_base_freq, ledc_times_13_bit); //set the analogwrite channel
-            ledcAttachPin(LED_BUILTIN, ledc_channel_0);                   // attach the analog out channel to LED pin
-            for (int i = 0; i < 200; i++)                                 //fade in and out the led few times
-            {
-              ledcAnalogWrite(ledc_channel_0, brightness); //write the data to LED channel
-              // change the brightness for next time through the loop:
-              brightness = brightness + fadeAmount;
-              // reverse the direction of the fading at the ends of the fade:
-              if (brightness <= 0 || brightness >= 255)
-              {
-                fadeAmount = -fadeAmount;
-              }
-              // wait for 30 milliseconds to see the dimming effect
-              delay(30);
-            }
-            ledcDetachPin(LED_BUILTIN); // detach the analog channel so we can access the digitalwrite
+           ledFade();
           }
         }
       }
@@ -123,24 +120,79 @@ void PrimulTask(void *parameter) // the rtos task
                      // if we ever get here by error, delete the task to free memory
 }
 
+void IncaUnTask(void *parameter) // the rtos task
+{
+  while (1)
+  {
+  //just for fun, return the primary task stack depth every 3 seconds
+  //even the primary task run on a different core
+  Serial.println(uxTaskGetStackHighWaterMark(primulHandle));
+  delay(3000);
+  }
+}
+
+///////////////////////////////////////////////////////  Arduino code //////////////////////////////////////////////
+
 void setup()
 {
   Serial.begin(115200);
   WiFi.softAP(ssid, password); // start the Wifi ap mode
 
-  xTaskCreatePinnedToCore( // starting the rtos task
+  xTaskCreatePinnedToCore( // starting first rtos task
       PrimulTask,    // Task function. 
       "PrimulTask",  // String with name of task, a name just for humans
       10000,         // Stack size in WORDS!!! NOT bytes 
       NULL,          // Parameter passed as input of the task
-      1,             // Priority of the task. 
+      2,             // Priority of the task. 
       &primulHandle, // Task handle. 
       1);            // our task run on core 1, wifi engine run on core 0
+
+  xTaskCreatePinnedToCore( // starting second rtos task
+      IncaUnTask,    // Task function. 
+      "IncaUnTask",  // String with name of task, a name just for humans
+      800,           // Stack size in WORDS!!! NOT bytes 
+      NULL,          // Parameter passed as input of the task
+      1,             // Priority of the task. 
+      &alDoileaHandle, // Task handle. 
+      0);            // secondary task running on core 0 along with the wifi
 }
 
 void loop()
 {
-  //just for fun, the loop return the task stack depth every 3 seconds
-  Serial.println(uxTaskGetStackHighWaterMark(primulHandle));
-  delay(3000);
+  //everything is done in tasks
+  //loop doig nothing...
+  delay(1000);
+}
+
+///////////////////////////////////  Functions with protoypes above implemented here /////////////////////////////////
+
+void ledFade()
+{
+  ledcSetup(ledc_channel_0, ledc_base_freq, ledc_times_13_bit); //set the analogwrite channel
+  ledcAttachPin(LED_BUILTIN, ledc_channel_0);                   // attach the analog out channel to LED pin
+  for (int i = 0; i < 200; i++)                                 //fade in and out the led few times
+  {
+    ledcAnalogWrite(ledc_channel_0, brightness); //write the data to LED channel
+    // change the brightness for next time through the loop:
+    brightness = brightness + fadeAmount;
+    // reverse the direction of the fading at the ends of the fade:
+    if (brightness <= 0 || brightness >= 255)
+    {
+      fadeAmount = -fadeAmount;
+    }
+    // wait for 30 milliseconds to see the dimming effect
+    delay(30);
+  }
+  ledcDetachPin(LED_BUILTIN); // detach the analog channel so we can access the digitalwrite
+}
+
+void blink()
+{
+  for (int i = 0; i < 4; i++) // Blink the led 4 times
+  {
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(500);
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(500);
+  }
 }
