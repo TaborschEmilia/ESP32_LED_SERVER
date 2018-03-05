@@ -8,7 +8,7 @@ TaskHandle_t alDoileaHandle; // defining the rtos task handle
 /////////////////////////////////  Global Variables ///////////////////////
 
 int ledc_channel_0 = 0;
-int ledc_times_13_bit = 13;
+int ledc_timer_13_bit = 13;
 int brightness = 0; // how bright the LED is
 int fadeAmount = 5; // how many points to fade the LED by
 double ledc_base_freq = 5000;
@@ -168,7 +168,7 @@ void loop()
 
 void ledFade()
 {
-  ledcSetup(ledc_channel_0, ledc_base_freq, ledc_times_13_bit); //set the analogwrite channel
+  ledcSetup(ledc_channel_0, ledc_base_freq, ledc_timer_13_bit); //set the analogwrite channel
   ledcAttachPin(LED_BUILTIN, ledc_channel_0);                   // attach the analog out channel to LED pin
   for (int i = 0; i < 200; i++)                                 //fade in and out the led few times
   {
